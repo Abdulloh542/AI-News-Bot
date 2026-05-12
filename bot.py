@@ -12,6 +12,7 @@ Reliability fixes:
 import asyncio
 import logging
 import os
+import signal
 from datetime import timedelta, timezone, time as dt_time
 from html import escape as he
 
@@ -22,7 +23,7 @@ from telegram import (
     BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Update,
 )
 from telegram.constants import ParseMode
-from telegram.error import BadRequest, RetryAfter
+from telegram.error import BadRequest, Conflict, RetryAfter
 from telegram.ext import (
     Application, CallbackQueryHandler, CommandHandler,
     ContextTypes, JobQueue, MessageHandler, filters,
@@ -452,6 +453,9 @@ async def _job_cleanup(ctx: ContextTypes.DEFAULT_TYPE) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 async def _error_handler(update: object, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if isinstance(ctx.error, Conflict):
+        logger.critical("CONFLICT: another bot instance is running! Stopping this one.")
+        os._exit(1)  # force exit so Render restarts cleanly
     logger.error("Unhandled exception: %s", ctx.error, exc_info=ctx.error)
     if not isinstance(update, Update):
         return
@@ -556,16 +560,26 @@ async def _main() -> None:
     # Start health-check server (for Render free tier keep-alive)
     await _run_health_server()
 
-    # Run bot manually inside our event loop (avoids "loop already running" error)
+    stop_event = asyncio.Event()
+
+    loop = asyncio.get_event_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, stop_event.set)
+        except (NotImplementedError, RuntimeError):
+            pass  # Windows fallback — SIGTERM handled by asyncio.run() anyway
+
     async with app:
         await app.start()
         await app.updater.start_polling(
             allowed_updates=Update.ALL_TYPES,
             drop_pending_updates=True,
         )
-        logger.info("Polling — Ctrl+C to stop")
-        # Keep running until process is killed
-        await asyncio.Event().wait()
+        logger.info("Polling started — waiting for stop signal")
+        await stop_event.wait()
+        logger.info("Stop signal received — shutting down")
+        await app.updater.stop()
+        await app.stop()
 
 
 if __name__ == "__main__":
