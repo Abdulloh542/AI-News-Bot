@@ -1,11 +1,6 @@
 """
-news.py — RSS + Gemini AI news pipeline (optimised for speed & reliability).
-
-Architecture:
-  • 11 diverse RSS sources fetched in parallel
-  • In-memory cache per language (TTL 2 h) → instant response
-  • Sequential Gemini calls during prefetch (avoids rate-limit collisions)
-  • Lean prompt: 15 articles, titles + 120-char summary → fast AI response
+news.py — RSS + Gemini AI news pipeline.
+Optimised for Render free tier (slow CPU/network).
 """
 
 import asyncio
@@ -28,50 +23,36 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# RSS sources  (11 feeds — diverse tech & AI coverage)
+# RSS sources — fast, reliable feeds only
 # ─────────────────────────────────────────────────────────────────────────────
 
 RSS_FEEDS: List[Dict] = [
     {"url": "https://news.google.com/rss/search?q=artificial+intelligence&hl=en&gl=US&ceid=US:en",
      "source": "Google News"},
-    {"url": "https://news.google.com/rss/search?q=ChatGPT+OpenAI+LLM&hl=en&gl=US&ceid=US:en",
+    {"url": "https://news.google.com/rss/search?q=ChatGPT+OpenAI&hl=en&gl=US&ceid=US:en",
      "source": "Google News"},
-    {"url": "https://news.google.com/rss/search?q=machine+learning+deep+learning&hl=en&gl=US&ceid=US:en",
-     "source": "Google News"},
-    {"url": "https://news.google.com/rss/search?q=AI+robotics+autonomous&hl=en&gl=US&ceid=US:en",
+    {"url": "https://news.google.com/rss/search?q=machine+learning&hl=en&gl=US&ceid=US:en",
      "source": "Google News"},
     {"url": "https://techcrunch.com/category/artificial-intelligence/feed/",
      "source": "TechCrunch"},
-    {"url": "https://www.theverge.com/rss/index.xml",
-     "source": "The Verge"},
     {"url": "https://venturebeat.com/category/ai/feed/",
      "source": "VentureBeat"},
-    {"url": "https://feeds.arstechnica.com/arstechnica/technology-lab",
-     "source": "Ars Technica"},
-    {"url": "https://www.wired.com/feed/category/artificial-intelligence/latest/rss",
-     "source": "Wired"},
-    {"url": "https://www.reddit.com/r/artificial/.rss",
-     "source": "Reddit"},
-    {"url": "https://www.reddit.com/r/MachineLearning/.rss",
-     "source": "Reddit"},
 ]
 
-_TIMEOUT = aiohttp.ClientTimeout(total=12)
-_HEADERS  = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                  "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+_TIMEOUT = aiohttp.ClientTimeout(total=8)   # 8s max per feed
+_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (compatible; NewsBot/1.0)"
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Cache  { lang → {ts, msg, news} }
+# Cache
 # ─────────────────────────────────────────────────────────────────────────────
 
 _cache: Dict[str, dict] = {}
-CACHE_TTL = 7200   # 2 hours in seconds
+CACHE_TTL = 7200  # 2 hours
 
 
 def get_cached(lang: str) -> Optional[Tuple[str, List, int]]:
-    """Return (msg, news_list, age_minutes) if cache is fresh, else None."""
     e = _cache.get(lang)
     if not e:
         return None
@@ -105,23 +86,18 @@ def cache_status() -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 LANG_FULL = {"uz": "O'zbek", "ru": "Russian", "en": "English"}
-
 READ_BTN  = {"uz": "O'qish →", "ru": "Читать →", "en": "Read →"}
-
 HDR       = {"uz": "🔥 AI Yangiliklari", "ru": "🔥 AI Новости", "en": "🔥 AI News"}
-
 AGE_FMT   = {
     "uz": "🕐 {m} daqiqa oldin",
     "ru": "🕐 {m} мин. назад",
     "en": "🕐 {m} min ago",
 }
-
 ERR_FETCH = {
-    "uz": "❌ Yangiliklar olinmadi. Internet aloqasini tekshiring.",
-    "ru": "❌ Не удалось получить новости. Проверьте подключение.",
-    "en": "❌ Failed to fetch news. Check your connection.",
+    "uz": "❌ Yangiliklar olinmadi. Keyinroq qayta urining.",
+    "ru": "❌ Не удалось получить новости. Попробуйте позже.",
+    "en": "❌ Failed to fetch news. Please try again.",
 }
-
 ERR_AI = {
     "uz": "❌ AI ishlamadi. Keyinroq qayta urining.",
     "ru": "❌ ИИ не ответил. Попробуйте позже.",
@@ -138,7 +114,6 @@ def _clean(text: str) -> str:
 
 
 def _safe_html(text: str) -> str:
-    """Remove any stray HTML tags from AI-generated text before sending to Telegram."""
     return re.sub(r"<[^>]+>", "", text).strip()
 
 
@@ -148,27 +123,19 @@ async def _fetch_one(session: aiohttp.ClientSession, feed: Dict) -> List[Dict]:
     try:
         async with session.get(url, headers=_HEADERS, timeout=_TIMEOUT) as r:
             if r.status != 200:
-                logger.debug("Feed %s → %d", src, r.status)
                 return arts
-            raw  = await r.text(errors="replace")
-            feed_data = feedparser.parse(raw)
-            for entry in feed_data.entries[:10]:
-                title   = _clean(entry.get("title", ""))
-                summary = _clean(entry.get("summary",
-                                 entry.get("description", "")))[:120]
-                link    = entry.get("link", "")
+            raw = await r.text(errors="replace")
+            for entry in feedparser.parse(raw).entries[:8]:
+                title = _clean(entry.get("title", ""))
+                link  = entry.get("link", "")
                 if title and link:
-                    arts.append({"title": title, "summary": summary,
-                                 "link": link,  "source": src})
-    except asyncio.TimeoutError:
-        logger.debug("Timeout: %s", src)
+                    arts.append({"title": title, "link": link, "source": src})
     except Exception as exc:
-        logger.debug("Feed error %s: %s", src, exc)
+        logger.debug("Feed %s: %s", src, exc)
     return arts
 
 
 async def fetch_all_feeds() -> List[Dict]:
-    """Fetch all feeds concurrently; return deduplicated article list."""
     async with aiohttp.ClientSession() as session:
         results = await asyncio.gather(
             *[_fetch_one(session, f) for f in RSS_FEEDS],
@@ -179,15 +146,15 @@ async def fetch_all_feeds() -> List[Dict]:
         if isinstance(r, list):
             pool.extend(r)
 
-    seen: set  = set()
+    seen: set = set()
     unique: List[Dict] = []
     for art in pool:
-        key = re.sub(r"\W+", "", art["title"].lower())[:50]
+        key = re.sub(r"\W+", "", art["title"].lower())[:40]
         if key not in seen:
             seen.add(key)
             unique.append(art)
 
-    logger.info("Fetched %d unique articles (%d feeds)", len(unique), len(RSS_FEEDS))
+    logger.info("Fetched %d unique articles", len(unique))
     return unique
 
 
@@ -202,10 +169,7 @@ _MODELS = [
     "gemini-2.5-flash",
 ]
 
-_SYS = (
-    "You are an AI news curator. "
-    "Always respond with ONLY a valid JSON array — no markdown, no extra text."
-)
+_SYS = "You are an AI news curator. Respond ONLY with a valid JSON array, no markdown."
 
 _gemini_client: Optional[genai.Client] = None
 
@@ -217,27 +181,27 @@ def _client() -> genai.Client:
         if not key:
             raise RuntimeError("GOOGLE_API_KEY not set")
         _gemini_client = genai.Client(api_key=key)
-        logger.info("Gemini client ready  models=%s", _MODELS)
     return _gemini_client
 
 
 def _prompt(articles: List[Dict], lang: str) -> str:
     lang_name = LANG_FULL.get(lang, "English")
-    block = ""
-    for i, a in enumerate(articles[:10], 1):       # max 10 — faster
-        block += f"{i}. [{a['source']}] {a['title']}\n   {a['link']}\n\n"
-
+    block = "\n".join(
+        f"{i}. [{a['source']}] {a['title']} | {a['link']}"
+        for i, a in enumerate(articles[:8], 1)
+    )
     return (
-        f"Pick 5 best AI/ML news. Translate title and write 1-sentence summary in {lang_name}. "
-        f"Rate importance 1-5. Keep original link and source.\n"
-        f'Return ONLY JSON array: [{{"title":"","summary":"","link":"","source":"","importance":3}}]\n\n'
-        f"ARTICLES:\n{block}"
+        f"From these articles pick 5 best AI/ML news items.\n"
+        f"For each: translate title to {lang_name}, write 1-sentence summary in {lang_name}, "
+        f"rate importance 1-5, keep original link and source.\n"
+        f'Return ONLY JSON: [{{"title":"","summary":"","link":"","source":"","importance":3}}]\n\n'
+        f"{block}"
     )
 
 
 def _parse(raw: str) -> List[Dict]:
     raw = re.sub(r"^```(?:json)?\s*", "", raw)
-    raw = re.sub(r"\s*```$", "",          raw).strip()
+    raw = re.sub(r"\s*```$", "", raw).strip()
     if not raw.startswith("["):
         m = re.search(r"\[[\s\S]*?\]", raw)
         raw = m.group() if m else "[]"
@@ -247,64 +211,51 @@ def _parse(raw: str) -> List[Dict]:
             continue
         t = str(item.get("title", "")).strip()
         l = str(item.get("link",  "")).strip()
-        if not t or not l:
-            continue
-        out.append({
-            "title":      t,
-            "summary":    str(item.get("summary", "")).strip(),
-            "link":       l,
-            "source":     str(item.get("source", "")).strip(),
-            "importance": max(1, min(5, int(item.get("importance", 3)))),
-        })
+        if t and l:
+            out.append({
+                "title":      t,
+                "summary":    str(item.get("summary", "")).strip(),
+                "link":       l,
+                "source":     str(item.get("source",  "")).strip(),
+                "importance": max(1, min(5, int(item.get("importance", 3)))),
+            })
     return out[:5]
 
 
 async def _gemini(prompt: str) -> Optional[List[Dict]]:
-    """Call Gemini; try model chain on 429/404; return list or None."""
     cl   = _client()
     loop = asyncio.get_event_loop()
     cfg  = gtypes.GenerateContentConfig(
         system_instruction=_SYS,
-        temperature=0.2,
-        max_output_tokens=2500,
-        response_mime_type="application/json",
+        temperature=0.1,
+        max_output_tokens=1000,
     )
 
     for model in _MODELS:
-        for attempt in range(2):
-            try:
-                resp = await loop.run_in_executor(
+        try:
+            resp = await asyncio.wait_for(
+                loop.run_in_executor(
                     None,
                     lambda m=model: cl.models.generate_content(
                         model=m, contents=prompt, config=cfg),
-                )
-                result = _parse(resp.text.strip())
+                ),
+                timeout=25.0,
+            )
+            result = _parse(resp.text.strip())
+            if result:
                 logger.info("Gemini (%s) OK → %d items", model, len(result))
                 return result
-
-            except json.JSONDecodeError:
-                logger.warning("JSON parse fail on %s", model)
-                break
-
-            except Exception as exc:
-                s = str(exc)
-                if "429" in s or "RESOURCE_EXHAUSTED" in s:
-                    delay = 12
-                    mm = re.search(r"retryDelay.*?(\d+)s", s)
-                    if mm:
-                        delay = int(mm.group(1)) + 1
-                    if attempt == 0:
-                        logger.warning("Rate-limit %s → wait %ds", model, delay)
-                        await asyncio.sleep(delay)
-                    else:
-                        logger.warning("Still limited %s → next model", model)
-                        break
-                elif "404" in s or "NOT_FOUND" in s or "503" in s:
-                    logger.warning("%s unavailable → next model", model)
-                    break
-                else:
-                    logger.error("Gemini %s: %s", model, s[:100])
-                    break
+            logger.warning("Gemini (%s) returned empty list", model)
+        except asyncio.TimeoutError:
+            logger.warning("Gemini (%s) timeout → next model", model)
+        except Exception as exc:
+            s = str(exc)
+            if "429" in s or "RESOURCE_EXHAUSTED" in s:
+                logger.warning("Rate-limit %s → next model", model)
+            elif "404" in s or "NOT_FOUND" in s:
+                logger.warning("%s not found → next model", model)
+            else:
+                logger.error("Gemini %s: %s", model, s[:120])
 
     logger.error("All Gemini models failed")
     return None
@@ -315,19 +266,17 @@ async def _gemini(prompt: str) -> Optional[List[Dict]]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _fmt(news_list: List[Dict], lang: str, age_min: Optional[int]) -> str:
-    now     = datetime.now().strftime("%d.%m.%Y · %H:%M")
-    header  = HDR.get(lang, HDR["en"])
-    read    = READ_BTN.get(lang, "Read →")
-
-    lines   = [f"<b>{header}</b> — {now}", ""]
+    now    = datetime.now().strftime("%d.%m.%Y · %H:%M")
+    header = HDR.get(lang, HDR["en"])
+    read   = READ_BTN.get(lang, "Read →")
+    lines  = [f"<b>{header}</b> — {now}", ""]
 
     for i, item in enumerate(news_list, 1):
         stars   = "⭐" * item.get("importance", 3)
         title   = he(_safe_html(item.get("title",   "")))
         summary = he(_safe_html(item.get("summary", "")))
         link    = item.get("link", "#")
-        src     = he(item.get("source",  ""))
-
+        src     = he(item.get("source", ""))
         lines += [
             f"<b>{i}. {stars}</b>",
             f"<b>{title}</b>",
@@ -337,11 +286,10 @@ def _fmt(news_list: List[Dict], lang: str, age_min: Optional[int]) -> str:
             "",
         ]
 
-    # Footer: cache age or fresh label
     if age_min:
         footer = AGE_FMT.get(lang, AGE_FMT["en"]).format(m=age_min)
     else:
-        footer = {"uz": "🟢 Yangi",  "ru": "🟢 Свежие", "en": "🟢 Fresh"}.get(lang, "🟢")
+        footer = {"uz": "🟢 Yangi", "ru": "🟢 Свежие", "en": "🟢 Fresh"}.get(lang, "🟢")
     lines.append(footer)
     return "\n".join(lines)
 
@@ -351,22 +299,20 @@ def _fmt(news_list: List[Dict], lang: str, age_min: Optional[int]) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 async def get_news(lang: str, force: bool = False) -> Tuple[str, List[Dict], bool]:
-    """
-    Returns (html_message, news_list, from_cache).
-    Serves from cache when available and force=False.
-    """
     if not force:
         cached = get_cached(lang)
         if cached:
             msg, news, age = cached
-            # Rebuild footer with current age
             rebuilt = _fmt(news, lang, age)
             logger.info("Cache HIT %s age=%dm", lang, age)
             return rebuilt, news, True
 
     logger.info("Cache MISS %s — fetching…", lang)
     try:
-        articles = await fetch_all_feeds()
+        articles = await asyncio.wait_for(fetch_all_feeds(), timeout=15.0)
+    except asyncio.TimeoutError:
+        logger.error("fetch_all_feeds timeout")
+        return ERR_FETCH.get(lang, ERR_FETCH["en"]), [], False
     except Exception as e:
         logger.error("fetch_all_feeds: %s", e)
         return ERR_FETCH.get(lang, ERR_FETCH["en"]), [], False
@@ -384,13 +330,11 @@ async def get_news(lang: str, force: bool = False) -> Tuple[str, List[Dict], boo
 
 
 async def prefetch_all() -> None:
-    """Pre-warm cache for all languages sequentially (avoids rate limits)."""
     logger.info("Prefetch start  cache=%s", cache_status())
     try:
-        articles = await fetch_all_feeds()
+        articles = await asyncio.wait_for(fetch_all_feeds(), timeout=15.0)
         if not articles:
-            logger.warning("Prefetch: no articles")
-            return
+            logger.warning("Prefetch: no articles"); return
         for lang in ("uz", "ru", "en"):
             try:
                 news = await _gemini(_prompt(articles, lang))
@@ -401,7 +345,7 @@ async def prefetch_all() -> None:
                     logger.warning("Prefetch FAIL %s", lang)
             except Exception as e:
                 logger.error("Prefetch %s: %s", lang, e)
-            await asyncio.sleep(2)
+            await asyncio.sleep(3)
         logger.info("Prefetch done  cache=%s", cache_status())
     except Exception as e:
         logger.error("Prefetch global: %s", e)
