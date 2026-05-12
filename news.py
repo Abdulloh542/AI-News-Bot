@@ -192,10 +192,10 @@ def _prompt(articles: List[Dict], lang: str) -> str:
         for i, a in enumerate(articles[:8], 1)
     )
     return (
-        f"From these articles pick 5 best AI/ML news items.\n"
-        f"For each: translate title to {lang_name}, write 1-sentence summary in {lang_name}, "
-        f"rate importance 1-5, keep original link and source.\n"
-        f'Return ONLY JSON: [{{"title":"","summary":"","link":"","source":"","importance":3}}]\n\n'
+        f"Pick 3 best AI/ML news. For each: short title in {lang_name} (max 10 words), "
+        f"one short sentence summary in {lang_name} (max 20 words), "
+        f"importance 1-5, original link, source name.\n"
+        f'Return compact JSON array only: [{{"title":"","summary":"","link":"","source":"","importance":3}}]\n\n'
         f"{block}"
     )
 
@@ -221,7 +221,7 @@ def _parse(raw: str) -> List[Dict]:
                     "source":     str(item.get("source",  "")).strip(),
                     "importance": max(1, min(5, int(item.get("importance", 3)))),
                 })
-        return out[:5]
+        return out[:3]
     except Exception as exc:
         logger.warning("_parse failed: %s | raw=%s", exc, raw[:100])
         return []
@@ -233,7 +233,7 @@ async def _gemini(prompt: str) -> Optional[List[Dict]]:
     cfg  = gtypes.GenerateContentConfig(
         system_instruction=_SYS,
         temperature=0.1,
-        max_output_tokens=2048,
+        max_output_tokens=4096,
         response_mime_type="application/json",
     )
 
