@@ -179,7 +179,9 @@ def _client() -> genai.Client:
     if _gemini_client is None:
         key = os.getenv("GOOGLE_API_KEY", "")
         if not key:
+            logger.critical("GOOGLE_API_KEY is NOT set — Gemini will not work!")
             raise RuntimeError("GOOGLE_API_KEY not set")
+        logger.info("Gemini client init (key length=%d)", len(key))
         _gemini_client = genai.Client(api_key=key)
     return _gemini_client
 
@@ -260,7 +262,7 @@ async def _gemini(prompt: str) -> Optional[List[Dict]]:
             elif "404" in s or "NOT_FOUND" in s:
                 logger.warning("%s not found → next model", model)
             else:
-                logger.error("Gemini %s: %s", model, s[:120])
+                logger.error("Gemini %s error: %s", model, s[:300])
 
     logger.error("All Gemini models failed")
     return None
