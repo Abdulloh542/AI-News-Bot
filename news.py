@@ -196,11 +196,10 @@ async def fetch_all_feeds() -> List[Dict]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 _MODELS = [
-    "gemini-2.5-flash-lite-preview-06-17",
-    "gemini-2.5-flash",
-    "gemini-2.0-flash-lite",
     "gemini-2.0-flash",
+    "gemini-2.0-flash-lite",
     "gemini-1.5-flash-latest",
+    "gemini-2.5-flash",
 ]
 
 _SYS = (
@@ -225,16 +224,13 @@ def _client() -> genai.Client:
 def _prompt(articles: List[Dict], lang: str) -> str:
     lang_name = LANG_FULL.get(lang, "English")
     block = ""
-    for i, a in enumerate(articles[:15], 1):       # max 15 — fast prompt
-        block += f"{i}. [{a['source']}] {a['title']}\n   {a['summary']}\n   {a['link']}\n\n"
+    for i, a in enumerate(articles[:10], 1):       # max 10 — faster
+        block += f"{i}. [{a['source']}] {a['title']}\n   {a['link']}\n\n"
 
     return (
-        f"Pick the 7 best AI/ML news from the list. Rules:\n"
-        f"1. Prefer diverse sources.\n"
-        f"2. Translate title + write 2-sentence summary in {lang_name}.\n"
-        f"3. Rate importance 1-5.\n"
-        f"4. Keep original link and include source name.\n\n"
-        f'Return ONLY JSON: [{{"title":"","summary":"","link":"","source":"","importance":5}}]\n\n'
+        f"Pick 5 best AI/ML news. Translate title and write 1-sentence summary in {lang_name}. "
+        f"Rate importance 1-5. Keep original link and source.\n"
+        f'Return ONLY JSON array: [{{"title":"","summary":"","link":"","source":"","importance":3}}]\n\n'
         f"ARTICLES:\n{block}"
     )
 
@@ -260,7 +256,7 @@ def _parse(raw: str) -> List[Dict]:
             "source":     str(item.get("source", "")).strip(),
             "importance": max(1, min(5, int(item.get("importance", 3)))),
         })
-    return out[:7]
+    return out[:5]
 
 
 async def _gemini(prompt: str) -> Optional[List[Dict]]:
