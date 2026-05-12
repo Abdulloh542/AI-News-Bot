@@ -9,10 +9,4 @@ services:
         sync: false
       - key: GOOGLE_API_KEY
         sync: false
-      - key: DB_PATH
-        value: /data/users.db
-    disk:
-      name: bot-data
-      mountPath: /data
-      sizeGB: 1
     autoDeploy: true
