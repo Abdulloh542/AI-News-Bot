@@ -200,26 +200,30 @@ def _prompt(articles: List[Dict], lang: str) -> str:
 
 
 def _parse(raw: str) -> List[Dict]:
-    raw = re.sub(r"^```(?:json)?\s*", "", raw)
-    raw = re.sub(r"\s*```$", "", raw).strip()
-    if not raw.startswith("["):
-        m = re.search(r"\[[\s\S]*?\]", raw)
-        raw = m.group() if m else "[]"
-    out = []
-    for item in json.loads(raw):
-        if not isinstance(item, dict):
-            continue
-        t = str(item.get("title", "")).strip()
-        l = str(item.get("link",  "")).strip()
-        if t and l:
-            out.append({
-                "title":      t,
-                "summary":    str(item.get("summary", "")).strip(),
-                "link":       l,
-                "source":     str(item.get("source",  "")).strip(),
-                "importance": max(1, min(5, int(item.get("importance", 3)))),
-            })
-    return out[:5]
+    try:
+        raw = re.sub(r"^```(?:json)?\s*", "", raw)
+        raw = re.sub(r"\s*```$", "", raw).strip()
+        if not raw.startswith("["):
+            m = re.search(r"\[[\s\S]*?\]", raw)
+            raw = m.group() if m else "[]"
+        out = []
+        for item in json.loads(raw):
+            if not isinstance(item, dict):
+                continue
+            t = str(item.get("title", "")).strip()
+            l = str(item.get("link",  "")).strip()
+            if t and l:
+                out.append({
+                    "title":      t,
+                    "summary":    str(item.get("summary", "")).strip(),
+                    "link":       l,
+                    "source":     str(item.get("source",  "")).strip(),
+                    "importance": max(1, min(5, int(item.get("importance", 3)))),
+                })
+        return out[:5]
+    except Exception as exc:
+        logger.warning("_parse failed: %s | raw=%s", exc, raw[:100])
+        return []
 
 
 async def _gemini(prompt: str) -> Optional[List[Dict]]:
@@ -229,6 +233,7 @@ async def _gemini(prompt: str) -> Optional[List[Dict]]:
         system_instruction=_SYS,
         temperature=0.1,
         max_output_tokens=1000,
+        response_mime_type="application/json",
     )
 
     for model in _MODELS:
