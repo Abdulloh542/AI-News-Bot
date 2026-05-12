@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: ai-news-bot
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: GOOGLE_API_KEY
+        sync: false
+    autoDeploy: true

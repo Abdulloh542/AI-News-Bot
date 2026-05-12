@@ -9,10 +9,13 @@ Reliability fixes:
   • Cache miss → one loading edit, then one news edit
 """
 
+import asyncio
 import logging
 import os
 from datetime import timedelta, timezone, time as dt_time
 from html import escape as he
+
+from aiohttp import web
 
 from dotenv import load_dotenv
 from telegram import (
@@ -483,7 +486,29 @@ async def post_init(app: Application) -> None:
 # Entry point
 # ─────────────────────────────────────────────────────────────────────────────
 
-def main() -> None:
+# ─────────────────────────────────────────────────────────────────────────────
+# Health-check web server (keeps Render free tier alive)
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def _health(request: web.Request) -> web.Response:
+    return web.Response(text="OK")
+
+
+async def _run_health_server() -> None:
+    port = int(os.getenv("PORT", "8080"))
+    runner = web.AppRunner(web.Application())
+    runner.app.router.add_get("/", _health)
+    runner.app.router.add_get("/health", _health)
+    await runner.setup()
+    await web.TCPSite(runner, "0.0.0.0", port).start()
+    logger.info("Health server on port %d", port)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Entry point
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def _main() -> None:
     if not BOT_TOKEN:
         logger.critical("BOT_TOKEN not set"); return
     if not GOOGLE_API_KEY:
@@ -500,9 +525,16 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(cb_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, cmd_text))
 
+    # Start health-check server (for Render free tier keep-alive)
+    await _run_health_server()
+
     logger.info("Polling — Ctrl+C to stop")
-    app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+    await app.run_polling(
+        allowed_updates=Update.ALL_TYPES,
+        drop_pending_updates=True,
+        close_loop=False,
+    )
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(_main())
