@@ -528,12 +528,16 @@ async def _main() -> None:
     # Start health-check server (for Render free tier keep-alive)
     await _run_health_server()
 
-    logger.info("Polling — Ctrl+C to stop")
-    await app.run_polling(
-        allowed_updates=Update.ALL_TYPES,
-        drop_pending_updates=True,
-        close_loop=False,
-    )
+    # Run bot manually inside our event loop (avoids "loop already running" error)
+    async with app:
+        await app.start()
+        await app.updater.start_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True,
+        )
+        logger.info("Polling — Ctrl+C to stop")
+        # Keep running until process is killed
+        await asyncio.Event().wait()
 
 
 if __name__ == "__main__":
