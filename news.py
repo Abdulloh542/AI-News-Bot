@@ -44,11 +44,11 @@ RSS_FEEDS: List[Dict] = [
      "source": "TechCrunch"},
     {"url": "https://www.theverge.com/rss/index.xml",
      "source": "The Verge"},
-    {"url": "https://venturebeat.com/feed/",
+    {"url": "https://venturebeat.com/category/ai/feed/",
      "source": "VentureBeat"},
     {"url": "https://feeds.arstechnica.com/arstechnica/technology-lab",
      "source": "Ars Technica"},
-    {"url": "https://www.wired.com/feed/rss",
+    {"url": "https://www.wired.com/feed/category/artificial-intelligence/latest/rss",
      "source": "Wired"},
     {"url": "https://www.reddit.com/r/artificial/.rss",
      "source": "Reddit"},
@@ -137,6 +137,11 @@ def _clean(text: str) -> str:
     return re.sub(r"\s+", " ", unescape(text)).strip()
 
 
+def _safe_html(text: str) -> str:
+    """Remove any stray HTML tags from AI-generated text before sending to Telegram."""
+    return re.sub(r"<[^>]+>", "", text).strip()
+
+
 async def _fetch_one(session: aiohttp.ClientSession, feed: Dict) -> List[Dict]:
     arts: List[Dict] = []
     url, src = feed["url"], feed["source"]
@@ -191,11 +196,11 @@ async def fetch_all_feeds() -> List[Dict]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 _MODELS = [
-    "gemini-2.5-flash-lite",
+    "gemini-2.5-flash-lite-preview-06-17",
     "gemini-2.5-flash",
-    "gemini-flash-lite-latest",
     "gemini-2.0-flash-lite",
     "gemini-2.0-flash",
+    "gemini-1.5-flash-latest",
 ]
 
 _SYS = (
@@ -322,8 +327,8 @@ def _fmt(news_list: List[Dict], lang: str, age_min: Optional[int]) -> str:
 
     for i, item in enumerate(news_list, 1):
         stars   = "⭐" * item.get("importance", 3)
-        title   = he(item.get("title",   ""))
-        summary = he(item.get("summary", ""))
+        title   = he(_safe_html(item.get("title",   "")))
+        summary = he(_safe_html(item.get("summary", "")))
         link    = item.get("link", "#")
         src     = he(item.get("source",  ""))
 

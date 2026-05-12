@@ -448,6 +448,33 @@ async def _job_cleanup(ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Global error handler
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def _error_handler(update: object, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.error("Unhandled exception: %s", ctx.error, exc_info=ctx.error)
+    if not isinstance(update, Update):
+        return
+    uid = update.effective_user.id if update.effective_user else None
+    if not uid:
+        return
+    try:
+        u    = db.get_user(uid) or {}
+        lang = u.get("language", "uz")
+        err_txt = {
+            "uz": "⚠️ Xatolik yuz berdi. Qaytadan urinib ko'ring.",
+            "ru": "⚠️ Произошла ошибка. Попробуйте ещё раз.",
+            "en": "⚠️ Something went wrong. Please try again.",
+        }.get(lang, "⚠️ Error. Please try again.")
+        if update.callback_query:
+            await update.callback_query.answer(err_txt, show_alert=True)
+        elif update.message:
+            await update.message.reply_text(err_txt)
+    except Exception:
+        pass
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # App lifecycle
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -455,7 +482,6 @@ async def post_init(app: Application) -> None:
     await app.bot.set_my_commands([
         BotCommand("start", "Ishga tushirish / Запустить / Start"),
     ])
-    db.init_db()
 
     users = db.get_all_active_users()
     for u in users:
@@ -514,6 +540,7 @@ async def _main() -> None:
     if not GOOGLE_API_KEY:
         logger.critical("GOOGLE_API_KEY not set"); return
 
+    db.init_db()
     logger.info("Starting AI News Bot…")
     app = (
         Application.builder()
@@ -524,6 +551,7 @@ async def _main() -> None:
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CallbackQueryHandler(cb_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, cmd_text))
+    app.add_error_handler(_error_handler)
 
     # Start health-check server (for Render free tier keep-alive)
     await _run_health_server()

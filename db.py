@@ -8,12 +8,13 @@ Tables:
 
 import hashlib
 import logging
+import os
 import sqlite3
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = "users.db"
+DB_PATH = os.getenv("DB_PATH", "users.db")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
