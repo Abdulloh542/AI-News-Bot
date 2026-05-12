@@ -163,10 +163,9 @@ async def fetch_all_feeds() -> List[Dict]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 _MODELS = [
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-lite",
-    "gemini-1.5-flash-latest",
     "gemini-2.5-flash",
+    "gemini-2.5-flash-lite-preview-06-17",
+    "gemini-1.5-flash",
 ]
 
 _SYS = "You are an AI news curator. Respond ONLY with a valid JSON array, no markdown."
@@ -234,7 +233,7 @@ async def _gemini(prompt: str) -> Optional[List[Dict]]:
     cfg  = gtypes.GenerateContentConfig(
         system_instruction=_SYS,
         temperature=0.1,
-        max_output_tokens=1000,
+        max_output_tokens=2048,
         response_mime_type="application/json",
     )
 
