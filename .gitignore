@@ -1,0 +1,27 @@
+# Credentials — NEVER commit these
+.env
+
+# Database (user data)
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
