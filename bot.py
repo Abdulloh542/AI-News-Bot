@@ -55,6 +55,10 @@ logger = logging.getLogger(__name__)
 
 BOT_TOKEN      = os.getenv("BOT_TOKEN", "")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
+GROQ_API_KEY   = os.getenv("GROQ_API_KEY", "")
+GROQ_API_KEY_2 = os.getenv("GROQ_API_KEY_2", "")
+
+_active_ai_keys = sum(bool(k) for k in [GOOGLE_API_KEY, GROQ_API_KEY, GROQ_API_KEY_2])
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Constants
@@ -143,28 +147,31 @@ def txt_welcome(name: str, lang: str) -> str:
         "uz": (
             f"👋 Salom, <b>{n}</b>!\n\n"
             "🤖 <b>AI News Bot</b> — eng so'nggi AI yangiliklari.\n\n"
-            "📡 <b>11 manba:</b> Google News · TechCrunch · The Verge\n"
-            "VentureBeat · Ars Technica · Wired · Reddit va boshqalar\n\n"
-            "⚡ Yangiliklar cache'dan <b>bir zumda</b> keladi!\n"
-            "🔄 Cache 2 soatda yangilanadi.\n\n"
+            "📡 <b>24+ manba:</b> TechCrunch · The Verge · VentureBeat\n"
+            "OpenAI · Anthropic · HuggingFace · DeepMind · Wired\n"
+            "Reddit r/ML · Reddit r/AI · HackerNews · Twitter/𝕏 va boshqalar\n\n"
+            "🧠 <b>3 AI parallel:</b> Gemini + Groq × 2\n"
+            "⚡ Yangiliklar cache'dan <b>bir zumda</b> keladi!\n\n"
             "👇 Amalni tanlang:"
         ),
         "ru": (
             f"👋 Привет, <b>{n}</b>!\n\n"
             "🤖 <b>AI News Bot</b> — последние новости об ИИ.\n\n"
-            "📡 <b>11 источников:</b> Google News · TechCrunch · The Verge\n"
-            "VentureBeat · Ars Technica · Wired · Reddit и другие\n\n"
-            "⚡ Новости из кэша — <b>мгновенно</b>!\n"
-            "🔄 Обновление кэша каждые 2 часа.\n\n"
+            "📡 <b>24+ источника:</b> TechCrunch · The Verge · VentureBeat\n"
+            "OpenAI · Anthropic · HuggingFace · DeepMind · Wired\n"
+            "Reddit r/ML · Reddit r/AI · HackerNews · Twitter/𝕏 и другие\n\n"
+            "🧠 <b>3 AI параллельно:</b> Gemini + Groq × 2\n"
+            "⚡ Новости из кэша — <b>мгновенно</b>!\n\n"
             "👇 Выберите действие:"
         ),
         "en": (
             f"👋 Hello, <b>{n}</b>!\n\n"
             "🤖 <b>AI News Bot</b> — latest AI news.\n\n"
-            "📡 <b>11 sources:</b> Google News · TechCrunch · The Verge\n"
-            "VentureBeat · Ars Technica · Wired · Reddit & more\n\n"
-            "⚡ News served from cache <b>instantly</b>!\n"
-            "🔄 Cache refreshes every 2 hours.\n\n"
+            "📡 <b>24+ sources:</b> TechCrunch · The Verge · VentureBeat\n"
+            "OpenAI · Anthropic · HuggingFace · DeepMind · Wired\n"
+            "Reddit r/ML · Reddit r/AI · HackerNews · Twitter/𝕏 & more\n\n"
+            "🧠 <b>3 AI in parallel:</b> Gemini + Groq × 2\n"
+            "⚡ News served from cache <b>instantly</b>!\n\n"
             "👇 Choose an action:"
         ),
     }.get(lang, "")
@@ -195,33 +202,42 @@ def txt_saved(lang: str, sl: str, sf: str) -> str:
 def txt_info(lang: str) -> str:
     return {
         "uz": (
-            "ℹ️ <b>AI News Bot</b>\n\n"
-            "📡 <b>Manbalar (11):</b>\n"
-            "Google News (×4) · TechCrunch · The Verge\n"
-            "VentureBeat · Ars Technica · Wired · Reddit (×2)\n\n"
-            "🧠 <b>AI:</b> Gemini 2.5 Flash Lite\n"
-            "⚡ <b>Cache:</b> 2 soatlik xotira — tezlik kafolati\n"
-            "🔄 <b>Avtofon yangilash:</b> har 2 soatda\n\n"
+            "ℹ️ <b>AI News Bot v2</b>\n\n"
+            "📡 <b>Manbalar (24+):</b>\n"
+            "Google News · TechCrunch · The Verge · VentureBeat\n"
+            "Ars Technica · Wired · MIT Tech Review\n"
+            "OpenAI · Anthropic · HuggingFace · DeepMind\n"
+            "Reddit (r/ML · r/AI · r/OpenAI · r/LLaMA)\n"
+            "HackerNews · Twitter/𝕏 (Nitter)\n\n"
+            "🧠 <b>AI (parallel):</b> Gemini 2.5 + Groq LLaMA × 2\n"
+            "📌 <b>Tanlash:</b> 25 ta maqoladan eng 5 ta zo'r yangilik\n"
+            "⚡ <b>Cache:</b> 2 soatlik — tezlik kafolati\n\n"
             "/start — botni qayta ishga tushirish"
         ),
         "ru": (
-            "ℹ️ <b>AI News Bot</b>\n\n"
-            "📡 <b>Источники (11):</b>\n"
-            "Google News (×4) · TechCrunch · The Verge\n"
-            "VentureBeat · Ars Technica · Wired · Reddit (×2)\n\n"
-            "🧠 <b>ИИ:</b> Gemini 2.5 Flash Lite\n"
-            "⚡ <b>Кэш:</b> 2-часовая память — гарантия скорости\n"
-            "🔄 <b>Авто-обновление:</b> каждые 2 часа\n\n"
+            "ℹ️ <b>AI News Bot v2</b>\n\n"
+            "📡 <b>Источники (24+):</b>\n"
+            "Google News · TechCrunch · The Verge · VentureBeat\n"
+            "Ars Technica · Wired · MIT Tech Review\n"
+            "OpenAI · Anthropic · HuggingFace · DeepMind\n"
+            "Reddit (r/ML · r/AI · r/OpenAI · r/LLaMA)\n"
+            "HackerNews · Twitter/𝕏 (Nitter)\n\n"
+            "🧠 <b>AI (параллельно):</b> Gemini 2.5 + Groq LLaMA × 2\n"
+            "📌 <b>Отбор:</b> топ 5 из 25 статей\n"
+            "⚡ <b>Кэш:</b> 2 часа — гарантия скорости\n\n"
             "/start — перезапустить бота"
         ),
         "en": (
-            "ℹ️ <b>AI News Bot</b>\n\n"
-            "📡 <b>Sources (11):</b>\n"
-            "Google News (×4) · TechCrunch · The Verge\n"
-            "VentureBeat · Ars Technica · Wired · Reddit (×2)\n\n"
-            "🧠 <b>AI:</b> Gemini 2.5 Flash Lite\n"
-            "⚡ <b>Cache:</b> 2-hour memory — speed guarantee\n"
-            "🔄 <b>Auto-refresh:</b> every 2 hours\n\n"
+            "ℹ️ <b>AI News Bot v2</b>\n\n"
+            "📡 <b>Sources (24+):</b>\n"
+            "Google News · TechCrunch · The Verge · VentureBeat\n"
+            "Ars Technica · Wired · MIT Tech Review\n"
+            "OpenAI · Anthropic · HuggingFace · DeepMind\n"
+            "Reddit (r/ML · r/AI · r/OpenAI · r/LLaMA)\n"
+            "HackerNews · Twitter/𝕏 (Nitter)\n\n"
+            "🧠 <b>AI (parallel):</b> Gemini 2.5 + Groq LLaMA × 2\n"
+            "📌 <b>Curation:</b> top 5 from 25 articles\n"
+            "⚡ <b>Cache:</b> 2-hour memory — speed guarantee\n\n"
             "/start — restart the bot"
         ),
     }.get(lang, "")
@@ -541,8 +557,10 @@ async def _run_health_server() -> None:
 async def _main() -> None:
     if not BOT_TOKEN:
         logger.critical("BOT_TOKEN not set"); return
-    if not GOOGLE_API_KEY:
-        logger.critical("GOOGLE_API_KEY not set"); return
+    if not GOOGLE_API_KEY and not GROQ_API_KEY:
+        logger.critical("No AI API key set (need GOOGLE_API_KEY or GROQ_API_KEY)"); return
+    logger.info("AI backends active: %d key(s) (Gemini=%s, Groq=%s, Groq2=%s)",
+                _active_ai_keys, bool(GOOGLE_API_KEY), bool(GROQ_API_KEY), bool(GROQ_API_KEY_2))
 
     db.init_db()
     logger.info("Starting AI News Bot…")

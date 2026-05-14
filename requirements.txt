@@ -1,5 +1,6 @@
 python-telegram-bot[job-queue]==21.6
 google-genai>=1.0.0
+groq>=0.9.0
 feedparser==6.0.11
 aiohttp==3.9.5
 python-dotenv==1.0.1

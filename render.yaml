@@ -9,4 +9,8 @@ services:
         sync: false
       - key: GOOGLE_API_KEY
         sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_API_KEY_2
+        sync: false
     autoDeploy: true
